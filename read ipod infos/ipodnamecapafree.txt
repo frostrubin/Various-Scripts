@@ -1,0 +1,3 @@
+#!/usr/bin/osascript
+
+tell application "iTunes"	set ipodfree to get free space of every source whose kind is iPod	set ipodcapacity to get capacity of every source whose kind is iPod	set ipodname to get name of every source whose kind is iPod	get kind of every source whose kind is iPodend tellif ipodname is equal to "" then quitset ipodfree to (do shell script "echo " & ipodfree & "| cut -c 1-4")set ipodcapacity to (do shell script "echo " & ipodcapacity & "|cut -c 1-4")--do shell script "echo iPod: " & text item 1 of ipodname & ";echo Capacity: " & ipodcapacity & ";echo Free: " & ipodfreereturn "iPod: " & ipodname & "<br>Capacity: " & ipodcapacity & "<br>Free: " & ipodfree
