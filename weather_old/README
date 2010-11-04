@@ -1,0 +1,5 @@
+Hello,
+
+This folder contains scripts that were used to get weather data based on location (found via WLAN).
+They are deprecated, no longer maintained and newer versions, written in php are available in
+another repository of mine (under GeekTool Scripts).
