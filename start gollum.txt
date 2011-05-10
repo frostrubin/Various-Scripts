@@ -1,8 +1,0 @@
-display dialog "Please select what you want to do:" buttons ¬
-	{"Cancel", "Stop Gollum", "Start Gollum"} ¬
-		default button 3 with title "Choose an Action"
-if button returned of result = "Start Gollum" then
-	do shell script "/usr/bin/gollum --host 127.0.0.1 /Users/bernhard/Desktop/gollum-demo &> /dev/null &"
-else if button returned of result = "Stop Gollum" then
-	do shell script "killall ruby > /dev/null 2>&1;true"
-end if
