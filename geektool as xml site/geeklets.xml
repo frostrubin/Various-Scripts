@@ -1,0 +1,63 @@
+<?xml version="1.0" ?>
+<?xml-stylesheet href="geeklets.xsl" type="text/xsl" ?>
+<geeklets>
+    <geeklet id="weatherget">
+        <command>/Users/bernhard/.NerdTool/weather.php getttt</command>
+        <repeat>400</repeat>
+        <isslow>X</isslow>
+        <xpos>20px</xpos>
+        <ypos>20px</ypos>
+        <width>10px</width>
+        <height>10px</height>
+        <txtcolor>rgba(0,255,255,0.0)</txtcolor>
+        <background>rgba(0,0,255,0.0)</background>
+        <freecss></freecss>
+        <lastcall>1312031021</lastcall>
+        <output>-n The parameter getttt does not exist. &lt;br&gt;
+-n Valid parameters are: &quot;mac&quot;, &quot;get&quot;, &quot;forecast0&quot;, &quot;forecast1&quot;, &quot;forecast2&quot;, &quot;forecast3&quot;, &quot;forecast4&quot; and &quot;forecast5&quot; &lt;br&gt;
+</output>
+    </geeklet>
+    <geeklet id="forecast0">
+        <command>/Users/bernhard/.NerdTool/weather.php forecast0</command>
+        <repeat>3</repeat>
+        <isslow></isslow>
+        <xpos>250px</xpos>
+        <ypos>120px</ypos>
+        <width>500px</width>
+        <height>500px</height>
+        <txtcolor>rgba(255,255,255,0.5)</txtcolor>
+        <background>rgba(0,0,255,0.0)</background>
+        <freecss>font-family: &apos;Lucida Grande&apos;;font-size: 0.6em;</freecss>
+        <lastcall>1312031021</lastcall>
+        <output>-n Reinheim  1:48 PM CEST &lt;br&gt;
+-n Wind: WNW 14.48 km/h &lt;br&gt;
+-n H: 72% B: 1,015.92 mb and steady &lt;br&gt;
+-n Mostly Cloudy &lt;br&gt;
+-n Visibility 9.99 km &lt;br&gt;
+-n Sunrise 5:50 &lt;br&gt;
+-n Sunset 9:10 &lt;br&gt;
+-n Dewpoint 11 &lt;br&gt;
+-n Low 13 &lt;br&gt;
+-n Currently 16 &lt;br&gt;
+-n Feels like 16 &lt;br&gt;
+-n High 18 &lt;br&gt;
+</output>
+    </geeklet>
+    <geeklet id="forecast0image">
+        <command>echo </command>
+        <repeat>3</repeat>
+        <isslow></isslow>
+        <isimage>X</isimage>
+        <xpos>150px</xpos>
+        <ypos>80px</ypos>
+        <width>250px</width>
+        <height>180px</height>
+        <txtcolor>rgba(0,255,255,0.0)</txtcolor>
+        <background>url(./files/forecast0.png);background-repeat: no-repeat; background-size: 100% 100%;opacity: 0.5;</background>
+        <bgtrans>0.5</bgtrans>
+        <freecss></freecss>
+        <lastcall>1312031021</lastcall>
+        <output>-n  &lt;br&gt;
+</output>
+    </geeklet>
+</geeklets>
