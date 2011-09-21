@@ -1,0 +1,48 @@
+#!/bin/bash
+# This script sets up your iPhone to change the lock-screen wallpaper every 30 minutes.
+wallpaper_dir="/var/mobile/Media/Wallpapers"
+
+# Install the wallpaper changing script
+cat > /usr/bin/ChangeWallpaper <<EOF
+#!/bin/bash
+# Overwrite the LockBackground image with a random image from the wallpaper directory.
+files=($wallpaper_dir/*)
+cp -f \${files[RANDOM % \${#files[@]}]} /private/var/mobile/Library/SpringBoard/LockBackground.jpg
+EOF
+chmod +x /usr/bin/ChangeWallpaper
+
+# Install the launchd task to run the script every 30 minutes
+cat > /Library/LaunchDaemons/com.ndb.changewallpaper.plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+<key>Label</key>
+<string>com.ndb.wallpaperchanger</string>
+<key>OnDemand</key>
+<true/>
+<key>RunAtLoad</key>
+<false/>
+<key>ProgramArguments</key>
+<array>
+<string>/usr/bin/ChangeWallpaper</string>
+</array>
+<key>UserName</key>
+<string>mobile</string>
+<key>StartCalendarInterval</key>
+<array>
+<dict>
+<key>Minute</key>
+<integer>0</integer>
+</dict>
+<dict>
+<key>Minute</key>
+<integer>30</integer>
+</dict>
+</array>
+</dict>
+</plist>
+EOF
+
+# Load the scheduled task
+launchctl load /Library/LaunchDaemons/com.ndb.changewallpaper.plist
