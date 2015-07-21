@@ -1,0 +1,14 @@
+<mvc:View
+	controllerName="bookLibraryHome.Home"
+	xmlns:l="sap.ui.layout"
+	xmlns:mvc="sap.ui.core.mvc"
+	xmlns="sap.m">
+<VBox>
+  <Button text="Book List" press="onBookList" id="IdBookListButton">
+  </Button>
+
+  <Button text="Login" press="onLogin" id="IdLoginButton">
+  </Button>
+</VBox>
+
+</mvc:View>

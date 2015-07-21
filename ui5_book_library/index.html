@@ -1,0 +1,103 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta charset="UTF-8">
+		<title>Book Library</title>
+		<script src="./FileSaver.min.js"></script>
+		<script id="sap-ui-bootstrap"
+			src="https://openui5.hana.ondemand.com/resources/sap-ui-core.js"
+			data-sap-ui-libs="sap.m"
+			data-sap-ui-theme="sap_bluecrystal"
+			data-sap-ui-xx-bindingSyntax="complex"
+			data-sap-ui-preload="async"
+			data-sap-ui-compatVersion="edge" 
+			data-sap-ui-resourceroots='{"bookLibraryHome": "./", "bookLibraryList": "./"}'>
+		</script>
+		<script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.26.min.js" async defer></script>
+    <script src="https://apis.google.com/js/client:platform.js" async defer ></script>
+    <script>
+      var s3 = {};
+      var libraryXML = '';
+    	var app = {};
+			function signinCallback(authResult) {
+			  if (authResult['status']['signed_in']) {
+			    // Update the app to reflect a signed in user 
+			    // But only if we now can access S3
+			    AWS.config.credentials = new AWS.WebIdentityCredentials({
+		        RoleArn: 'arn:aws:iam::896555558885:role/BookLibraryWebAppReader',
+		  			WebIdentityToken: authResult['id_token'] // NOT access_token
+					});
+					AWS.config.region = 'eu-west-1';
+          s3 = new AWS.S3;
+			    
+			    s3.getObject({ Bucket:'bucket_with_books', Key: 'Library.xml'}, function(err, data) {
+				  if (err) {
+				    //console.log(err, err.stack); // an error occurred
+				   } else {
+				   	libraryXML = data.Body.toString();
+				    //by hiding the Login button
+				    $(".loginButton").hide();
+						// and showing all other buttons
+						$(".visibleAfterLogin").show();
+				   }    
+				  });
+			  } else {
+			    // Update the app to reflect a signed out user. Possible error values:
+			    //   "user_signed_out" - User is signed-out
+			    //   "access_denied" - User denied access to your app
+			    //   "immediate_failed" - Could not automatically log in the user
+			    console.log('Sign-in state: ' + authResult['error']);
+			  }
+			}
+			function downloadBook(filename) {
+		    s3.getObject({ Bucket:'bucket_with_books', Key: filename}, function(err, data) {
+			    if (err) {
+			      //console.log(err, err.stack); // an error occurred
+			    } else {
+			     	var blob = new Blob([data.Body], {type: data.ContentType});
+              saveAs(blob, filename);
+			    }    
+				});
+			}
+    </script>
+  	<script>
+      // How was this built?
+      // http://aws.amazon.com/sdk-for-browser/
+      // http://docs.aws.amazon.com/AWSJavaScriptSDK/guide/browser-configuring-wif.html
+      // https://docs.aws.amazon.com/AmazonS3/latest/dev/cors.html#how-do-i-enable-cors
+      // http://docs.aws.amazon.com/IAM/latest/UserGuide/roles-creatingrole-identityprovider.html#roles-creatingrole-identityprovider-oidc-console
+		</script>
+		<!-- Application launch configuration -->
+		<script>
+			sap.ui.getCore().attachInit(function() {
+				app = new sap.m.App ({
+				    pages: [
+				        new sap.m.Page('home',{
+				              title: "Book Library - Home", 
+				              enableScrolling : true,
+    					        content: [ new sap.ui.core.ComponentContainer({
+    						        name : "bookLibraryHome"
+    					        })]
+    					      }),
+    					  new sap.m.Page('list', {
+				              title: "Book Library - Book List", 
+				              enableScrolling : true,
+				              showNavButton: true,   
+										  navButtonPress: function(){ 
+										    app.back();
+										  },				              
+    					        content: [ new sap.ui.core.ComponentContainer({
+    						        name : "bookLibraryList"
+    					        })]
+    					      })
+    					    ]
+    					}).placeAt("content");
+				});
+		</script>
+	</head>
+	
+	<!-- UI Content -->
+	<body class="sapUiBody" id="content" role="application">
+	</body>
+</html>
