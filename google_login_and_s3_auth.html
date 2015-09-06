@@ -1,0 +1,73 @@
+<html>
+<head>
+  <meta name="google-signin-clientid"     content="270495662853-ffbofjtwe8762835235g95pddnlol.apps.googleusercontent.com">
+  <meta name="google-signin-scope"        content="profile email">
+  <meta name="google-signin-cookiepolicy" content="single_host_origin">
+  <style type="text/css">
+    #signOut { display: none; }
+  </style>
+	<script>
+    var s3 = {};
+    var usertype = '';
+    function setUserType(userType) {
+      usertype = userType;
+      if(!Boolean(usertype)) {
+        console.log('Logged in with Google, but no access to S3');
+      } else {
+        console.log('Logged in as ' + usertype);
+      }
+    }
+
+    function onSignIn(googleUser) {
+      // Useful data for your client-side scripts:
+      var profile = googleUser.getBasicProfile();
+      console.log("ID: " + profile.getId()); // Don't send this directly to your server!
+      console.log("Name: " + profile.getName());
+      console.log("Image URL: " + profile.getImageUrl());
+      console.log("Email: " + profile.getEmail());
+      document.getElementById('signOut').style.display = 'inline';
+
+      var id_token = googleUser.getAuthResponse().id_token;
+      AWS.config.credentials = new AWS.WebIdentityCredentials({
+                  RoleArn: 'arn:aws:iam::11698235235662655:role/TheManager',
+                  WebIdentityToken: id_token // NOT access_token
+                });
+      AWS.config.region = 'eu-west-1';
+      s3 = new AWS.S3;
+      s3.getObject({ Bucket:'bucketname', Key: 'authority_check/manager.txt'}, function(err, data) {
+          if (!Boolean(err)) {
+            setUserType('manager');
+          } else {
+            AWS.config.credentials = new AWS.WebIdentityCredentials({
+                    RoleArn: 'arn:aws:iam::11698235235662655:role/TheUser',
+                    WebIdentityToken: id_token // NOT access_token
+                  });
+            AWS.config.region = 'eu-west-1';
+            s3 = new AWS.S3;
+            s3.getObject({ Bucket:'bucketname', Key: 'authority_check/user.txt'}, function(err, data) {
+                if (!Boolean(err)) {
+                  setUserType('user');
+                } else {
+                  setUserType('');
+                }
+            });            
+          }
+      });
+    };
+
+	  function signOut() {
+	    var auth2 = gapi.auth2.getAuthInstance();
+	    auth2.signOut().then(function () {
+	      console.log('User signed out.');
+	      document.getElementById('signOut').style.display = 'none';
+	    });
+	  }
+	</script>
+  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1.26.min.js" async defer></script>
+	<script src="https://apis.google.com/js/platform.js" async defer></script>
+</head>
+<body>
+    <div class="g-signin2" data-onsuccess="onSignIn" data-theme="dark"></div>
+    <a id="signOut" href="#" onclick="signOut();">Sign out</a>
+</body>
+</html>
