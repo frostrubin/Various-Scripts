@@ -1,8 +1,7 @@
 var aws = require('aws-sdk');
 var s3 = new aws.S3({ apiVersion: '2006-03-01' });
 exports.handler = function(event, context) {
-    var params = {};
-    params.Bucket = event.Records[0].s3.bucket.name;
+    var params = { Bucket: event.Records[0].s3.bucket.name };
     params.Key = decodeURIComponent(event.Records[0].s3.object.key.replace(/\+/g, ' '));
     s3.headObject(params, function(err, data) {
         if (err) {
