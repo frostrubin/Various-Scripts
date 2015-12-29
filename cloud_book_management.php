@@ -3,6 +3,8 @@
 
 $book_bucket         = 'bucketname';
 $book_bucket_prefix  = 'books/'; // Slash at the end
+$upload_save_bucket  = 'backup_bucket';
+$upload_save_prefix  = 'Books_Uploaded/'; //Slash at the end
 $book_types          = array( 'epub' , 'pdf', 'another_file_ending' );
 $library_xml_name    = '1_Library.xml';
 $library_json_name   = '1_Library.json';
@@ -11,15 +13,13 @@ $library_xml_export  = '/Users/username/Desktop/export.xml';
 $library_xml_import  = '/Users/username/Desktop/Books.xml';
 $book_db             = '/Users/username/Desktop/Books.db';
 $ebook_meta_lambda   = 'EbookMetaLambdaFunction';
-$ebook_meta_binary   = '/Users/username/Applications/calibre.app/Contents/MacOS/ebook-meta';
 $ebook_meta_json_in  = '/tmp/ebook_meta_input.json';
 $ebook_meta_json_out = '/tmp/ebook_meta_output.json';
 
 function create_book_db() { // The Book DB is not part of the core functionality of this tool
   global $book_db;
-  $STRUCTURE='CREATE TABLE Books (md5 text(32) PRIMARY KEY NOT NULL, title text(300),
-  author text(300), author_sort text(300), genre char(128), filename text(300),
-  date_added text(10), time_added text(5) );';
+  $STRUCTURE='CREATE TABLE Books (filename text(300) PRIMARY KEY NOT NULL, title text(300),
+  author text(300), author_sort text(300), genre char(128) );';
   touch($book_db);
   shell_exec('echo "'.$STRUCTURE.'" > /tmp/bookdbstructure.txt');
   shell_exec('sqlite3 '.$book_db.'  < /tmp/bookdbstructure.txt');
@@ -54,7 +54,7 @@ function ends_with($haystack, $needle) {
 function book_type_relevant($filename) { // Check if a filename ends with an "allowed" book type
   global $book_types;
   foreach ($book_types as $book_type) {
-    if (ends_with($filename, $book_type)) {
+    if (ends_with(strtolower($filename), strtolower($book_type))) {
       return true;
     }
   }
@@ -68,47 +68,25 @@ function get_list_of_book_files() { // Get list of book files from the library f
   $json = shell_exec('aws s3api list-objects --bucket '.$book_bucket.' --prefix "'.$book_bucket_prefix.'" --query \'Contents[].{Key: Key}\'');
   $json_array = json_decode($json, TRUE);
   foreach($json_array as $info_array) {
-    if(book_type_relevant($info_array['Key'])) {
+    if (book_type_relevant($info_array['Key'])) {
       array_push($files, basename($info_array['Key']));
     }
   }
   return $files;
 }
 
-function get_list_of_new_book_files() { // Get list of book files from the library folder
+function get_list_of_new_book_files() { // Get list of new files from the specific folder
   global $new_book_folder;
   $files = array();
   if ($handle = opendir($new_book_folder)) {
       while (false !== ($file = readdir($handle))) {
           $i = $i + 1;
-          if ($file != "." && $file != ".." && book_type_relevant($file)) {
+          if ($file !== "." && $file !== ".." && book_type_relevant($file)) {
             $fullFilePath=$new_book_folder.$file;
             array_push($files, $fullFilePath);
           }
       }
       closedir($handle);
-  }
-  return $files;
-}
-
-function get_list_of_book_files_with_md5() { // Get list of book files and their md5 hashes
-  global $book_bucket;
-  global $book_bucket_prefix;
-  echo 'Getting list of book files with md5 ...'."\n";
-  $files = array();
-  $cmd = 'aws s3api list-objects --bucket '.$book_bucket.' --prefix "'.$book_bucket_prefix.'"';
-  $cmd = $cmd.' --query \'Contents[].{Key: Key, MD5: ETag}\'';
-  $json = shell_exec($cmd);
-  $json_array = json_decode($json, TRUE);
-  foreach($json_array as $info_array) {
-    $md5 = str_replace('"','', $info_array['MD5']);
-    if (array_key_exists($md5, $files)) {
-      echo "\n".'Warning! Duplicate md5 found:'."\n";
-      echo '  '.$info_array['Key']."\n".'  '.$files[$md5]."\n";
-    }
-    if(book_type_relevant($info_array['Key'])) {
-      $files[$md5] = basename($info_array['Key']);
-    }
   }
   return $files;
 }
@@ -132,7 +110,7 @@ function get_library_xml() {
   $retcode = 0;
   shell_exec('rm -f "/tmp/'.$library_xml_name.'"');
   exec('aws s3 cp "s3://'.$book_bucket.'/'.$book_bucket_prefix.$library_xml_name.'" "/tmp/'.$library_xml_name.'" 2>&1', $output, $retcode);
-  if ($rectode != 0 ){
+  if ($retcode !== 0 ){
     print_r($output);
     return;
   }
@@ -142,7 +120,7 @@ function get_library_xml() {
 
 function str_last_replace($search, $replace, $subject) {
   $pos = strrpos($subject, $search);
-  if($pos !== false) {
+  if ($pos !== false) {
     $subject = substr_replace($subject, $replace, $pos, strlen($search));
   }
   return $subject;
@@ -158,161 +136,172 @@ function append_simplexml(&$simplexml_to, &$simplexml_from) {
   }
 } 
 
-function get_ebook_meta_output() {
+function read_ebook_meta_lambda_result_data() { // Return the lines from the "data" segment that contain calibre output
   global $ebook_meta_json_out;
   $json_array = json_decode(file_get_contents($ebook_meta_json_out), TRUE);
-  foreach($json_array['data'] as $key => $value) {
-    foreach(preg_split("/((\r?\n)|(\r\n?))/", $value) as $line){
-      //Put each line into an array variable
-      $parts = explode(":", $line, 2);
-      $info[trim($parts[0])] = trim($parts[1]);
-      if (trim($parts[0]) == 'Author(s)' || trim($parts[0]) == 'Title') {
-        return $value;
-      }
-    } 
-  }
+  return $json_array['data'];
 }
 
-function get_ebook_meta_error() {
-  global $ebook_meta_json_out;
-  $json_array = json_decode(file_get_contents($ebook_meta_json_out), TRUE);
-  return $json_array['errorMessage'];
-}
-
-function execute_ebook_meta_lambda() {
+function execute_ebook_meta_lambda() { //Execute the lambda function. Returns only the terminal output.
   global $ebook_meta_lambda;
   global $ebook_meta_json_in;
   global $ebook_meta_json_out;
+  shell_exec('rm -f "'.$ebook_meta_json_out.'"');
   $cmd = 'aws lambda invoke --function-name '.$ebook_meta_lambda.' --invocation-type RequestResponse';
-  $cmd = $cmd.' --payload file://'.$ebook_meta_json_in.' '.$ebook_meta_json_out;
+  $cmd = $cmd.' --payload fileb://'.$ebook_meta_json_in.' '.$ebook_meta_json_out.' 2>&1'; //STDERR to STDOUT
   return shell_exec($cmd);
 }
 
-function get_book_info_from_file_cloud($filename_in) {
+function check_lambda_status_retcode() { // Return the status code of a lambda execution result
+  // This function can only work correctly, if check_for_lambda_tech_error did not find an error!
+  global $ebook_meta_json_out;
+  $json_array = json_decode(file_get_contents($ebook_meta_json_out), TRUE);
+  $status = $json_array['status'];
+  if ($status !== 0) {
+    echo 'Lambda function encountered a handeled error:'."\n";
+    if (array_key_exists('msg', $json_array)) {
+      echo $json_array['msg']."\n";
+    } else {
+      echo 'No error message was set!'."\n";
+    }
+  }
+  return $status;
+}
+
+function check_for_lambda_tech_error($terminal_result) {
+  global $ebook_meta_json_out;
+  $error = '';
+  $json_array = json_decode($terminal_result, TRUE);
+  if (empty($json_array)) {
+    $error = $terminal_result; // Output was not valid JSON
+  } else {
+    if ($json_array['StatusCode'] !== 200) { // Only Status Code 200 is good
+      $error = $terminal_result;
+    }
+    if (array_key_exists('FunctionError', $json_array)) { // Function Error occured
+      $error = $terminal_result;
+    }
+  }
+  
+  $output = '';
+  if (file_exists($ebook_meta_json_out)) {
+    $output = file_get_contents($ebook_meta_json_out);
+  } else {
+    $error = $error."\n".'No lamabda output file was created at '.$ebook_meta_json_out."\n";
+  }
+
+  $output_array = json_decode($output, TRUE);
+  if (empty($output_array)) {
+    $error = $error."\n".'The output file did not contain valid JSON: '.$ebook_meta_json_out."\n";
+  } elseif (! array_key_exists('status', $output_array)) {
+    $error = $error."\n".'The output file did not have a JSON field named status: '.$ebook_meta_json_out."\n";
+  }
+
+  if (! empty($error)) {
+    echo 'Technical Error when calling the lambda function:'."\n";
+    echo $error."\n";
+    if (! empty($output)) {
+      echo 'Lambda function result:'."\n";
+      echo $output."\n";
+    }
+  }
+  return $error;
+}
+
+function get_book_info_via_lambda($filename_in) {
   global $ebook_meta_json_in;
   global $book_bucket;
   global $book_bucket_prefix;
   echo 'Getting book info for '.$filename_in."\n";
   $filename = basename($filename_in);
   $info = array();
-  if (ends_with($filename, 'pdf')) {
+  if (ends_with(strtolower($filename), 'pdf')) {
     $parts = explode(' - ', $filename);
     $author = trim($parts[0]);
     $info['Author(s)'] = $author;
     array_shift($parts);
     $info['Title'] = implode(' - ',$parts);
-    $info['Title'] = str_replace('.pdf','',$info['Title']);
+    $info['Title'] = str_ireplace('.pdf','',$info['Title']);
     $info['Tags'] = 'PDF File'; // Genre
-  } else {
-    shell_exec('echo "{" > "'.$ebook_meta_json_in.'"; echo \"file_in\": \"'.$filename.'\", >> "'.$ebook_meta_json_in.'"');
-    shell_exec('echo \"file_out\": \"'.$filename.'\" >> "'.$ebook_meta_json_in.'"; echo "}" >> "'.$ebook_meta_json_in.'"');
-    $json = execute_ebook_meta_lambda();
-    $json_array = json_decode($json, TRUE);
-    if ($json_array['StatusCode'] == 200) {
-      $data = get_ebook_meta_output();
-    } else {
-      echo 'StatusCode: '.$json_array['StatusCode']."\n";
-      $error = get_ebook_meta_error($json);
-      echo $error;
-    }
+    return $info;
+  } 
 
-    foreach(preg_split("/((\r?\n)|(\r\n?))/", $data) as $line){
+  shell_exec('echo "{" > "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"bucket\": \"'.$book_bucket.'\", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"file_in\": \"'.$book_bucket_prefix.$filename.'\" >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo "}" >> "'.$ebook_meta_json_in.'"');
+  $terminal_result = execute_ebook_meta_lambda();
+  $tech_error = check_for_lambda_tech_error($terminal_result);
+  if (! empty($tech_error)) {
+    return $info;
+  }
+
+  $retcode = check_lambda_status_retcode();
+  if ($retcode !== 0) {
+    return $info;
+  }
+  
+  $data = read_ebook_meta_lambda_result_data();
+  if (empty(data)) {
+    return $info;
+  }
+
+  foreach($data as $key => $value) {
+    foreach(preg_split("/((\r?\n)|(\r\n?))/", $value) as $line){
       //Put each line into an array variable
       $parts = explode(":", $line, 2);
-      $info[trim($parts[0])] = trim($parts[1]);
-      if (trim($parts[0]) == 'Author(s)') {
-        $author_sort = array();
-        preg_match("/\[(.*)\]/", trim($parts[1]), $author_sort);
-        $info['SortAuthor'] = $author_sort[1];
-        $info[trim($parts[0])] = trim(str_last_replace( $author_sort[0] , '', trim($parts[1])));
-      }
-    } 
-  }  
-  return $info;
-}
-
-function get_book_info_from_file($filename_in) {
-  global $ebook_meta_binary;
-  global $book_folder;
-  global $book_bucket;
-  global $book_bucket_prefix;
-  $filename = basename($filename_in);
-  echo 'Getting book info for '.$filename."\n";
-  $info = array();
-  if (ends_with($filename, 'pdf')) {
-    $parts = explode(' - ', $filename);
-    $author = trim($parts[0]);
-    $info['Author(s)'] = $author;
-    array_shift($parts);
-    $info['Title'] = implode(' - ',$parts);
-    $info['Title'] = str_replace('.pdf','',$info['Title']);
-    $info['Tags'] = 'PDF File'; // Genre
-  } else {
-    shell_exec('aws s3 cp "s3://'.$book_bucket.'/'.$book_bucket_prefix.$filename.'" "/tmp/'.$filename.'"');
-    $data = shell_exec($ebook_meta_binary.' "/tmp/'.$filename.'"');
-    foreach(preg_split("/((\r?\n)|(\r\n?))/", $data) as $line){
-      //Put each line into an array variable
-      $parts = explode(":", $line, 2);
-      $info[trim($parts[0])] = trim($parts[1]);
-      if (trim($parts[0]) == 'Author(s)') {
-        $author_sort = array();
-        preg_match("/\[(.*)\]/", trim($parts[1]), $author_sort);
-        $info['SortAuthor'] = $author_sort[1];
-        $info[trim($parts[0])] = trim(str_last_replace( $author_sort[0] , '', trim($parts[1])));
+      if (array_key_exists(1, $parts)) {
+        $info[trim($parts[0])] = trim($parts[1]);
+        if (trim($parts[0]) === 'Author(s)') {
+          $author_sort = array();
+          preg_match("/\[(.*)\]/", trim($parts[1]), $author_sort);
+          $info['SortAuthor'] = $author_sort[1];
+          $info[trim($parts[0])] = trim(str_last_replace( $author_sort[0] , '', trim($parts[1])));
+        }
       }
     } 
   }
   return $info;
 }
 
-function update_file_with_info($filename_in, $book) {
-  global $ebook_meta_binary;
+function set_book_info_via_lambda($filename_to_update, $book) {
   global $book_bucket;
   global $book_bucket_prefix;
-  $filename = basename($filename_in);
-  echo 'Setting book info for '.$filename."\n";
-  shell_exec('aws s3 cp "s3://'.$book_bucket.'/'.$book_bucket_prefix.$filename.'" "/tmp/'.$filename.'"');
-  $cmd = $ebook_meta_binary.' "/tmp/'.$filename.'" -a "'.$book['author'].'"';
-  $cmd = $cmd.' --author-sort="'.$book['author_sort'].'" -t "'.$book['title'].'"';
-  $cmd = $cmd.' --tags="'.$book['genre'].'" -c "" -r "" -p "" -d "" -l "" --isbn "" -s "" --category ""';
-  $cmd = $cmd.' 2>&1 >/dev/null'; //STDOUT to null, STDERR to STDOUT
-  $err = shell_exec($cmd);
-  return $err;
-}
-
-function update_file_with_info_cloud($filename_in, $book) {
   global $ebook_meta_json_in;
   global $ebook_meta_json_out;
-  echo 'Setting book info for '.$filename_in."\n";
-  $filename = basename($filename_in);
-  shell_exec('echo "{" > "'.$ebook_meta_json_in.'"; echo \"file_in\": \"'.$filename.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"file_out\": \"'.$filename.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"title\": \"'.str_replace("'","\'", $book['title']).'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"author\": \"'.str_replace("'","\'", $book['author']).'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"author_sort\": \"'.str_replace("'","\'", $book['author_sort']).'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"genre\": \"'.$book['genre'].'\" >> "'.$ebook_meta_json_in.'"');
+  $filename     = basename($filename_to_update);
+  $filename_in  = $book_bucket_prefix.$filename;
+  $filename_out = $filename_in;
+  $title        = (string)$book['title'];
+  $author       = (string)$book['author'];
+  $author_sort  = (string)$book['author_sort'];
+  $genre        = (string)$book['genre'];
+  echo 'Setting book info for '.$filename."\n";
+  shell_exec('echo "{" > "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"bucket\": \"'.$book_bucket.'\", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"file_in\": \"'.$filename_in.'\", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"file_out\": \"'.$filename_out.'\", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"title\": \"'.$title.'\", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"author\": \"'.$author.'\", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"author_sort\": \"'.$author_sort.'\", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"genre\": \"'.$genre.'\" >> "'.$ebook_meta_json_in.'"');
   shell_exec('echo "}" >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo "" > "'.$ebook_meta_json_out.'"');
-  $json = execute_ebook_meta_lambda();
-  $json_array = json_decode($json, TRUE);
-  $error = '';
-  if ($json_array['StatusCode'] == 200) {
-    $json_array = json_decode(file_get_contents($ebook_meta_json_out), TRUE);
-    if ($json_array['status'] != 0) {
-      $error = $json_array['msg'];
-    }
-  } else {
-    echo 'StatusCode: '.$json_array['StatusCode']."\n";
-    $error = get_ebook_meta_error($json);
-    echo $error;
+  $terminal_result = execute_ebook_meta_lambda();
+  $tech_error = check_for_lambda_tech_error($terminal_result);
+  if (! empty($tech_error)) {
+    return $tech_error;
   }
-  return $error;
+  
+  $retcode = check_lambda_status_retcode();
+  if ($retcode !== 0) {
+    return 'Update Error: Retcode <> 0';
+  }
 }
 
 function slug($input) {
   $string = $input;
-  $string = ereg_replace("\n", '', $string);
-  $string = ereg_replace("\r", '', $string);
+  $string = str_replace("\n", '', $string);
+  $string = str_replace("\r", '', $string);
   $string = str_replace("'", '', $string);
   $string = str_replace('"', '', $string);
   $string = str_replace(';', '', $string);
@@ -379,7 +368,7 @@ if ($option == 4) { // Update Filenames
   $files = get_list_of_book_files();
   // Remove PDF files
   foreach ($files as $filename) {
-    if (ends_with($filename, 'pdf')) {
+    if (ends_with(strtolower($filename), 'pdf')) {
       $index = array_search($filename, $files);
       if ($index !== false) {
         unset($files[$index]);
@@ -413,7 +402,7 @@ if ($option == 4) { // Update Filenames
     $new_name = $new_name.'.'.$ext;
 
     // Compare it to the real filename
-    if ($new_name != $filename_base) {
+    if ($new_name !== $filename_base) {
       $to_rename[$filename] = $new_name;
     }
   }
@@ -434,7 +423,7 @@ if ($option == 4) { // Update Filenames
   foreach ($to_rename as $old_name => $new_name) {
     echo 'Old '.basename($old_name)."\n";
     echo 'New '.basename($new_name)."\n";
-    if ($files[$new_name] != '' ) {
+    if ($files[$new_name] !== '' ) {
       echo 'Waring! the new file above already exists!!'."\n";
     }
   }
@@ -460,50 +449,53 @@ if ($option == 3) { // Import new files.
   $prepend = @date("Y-d-m_H-i");
   foreach($files as $filename) {
     echo basename($filename)."\n";
-    shell_exec('aws s3 mv --sse AES256 "'.$filename.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$prepend.'_'.basename($filename).'"');
+    $uploadname = $prepend.'_'.pathinfo($filename, PATHINFO_FILENAME).'.'.strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    shell_exec('aws s3 mv --sse AES256 "'.$filename.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$uploadname.'"');
+    shell_exec('aws s3 cp --sse AES256 "s3://'.$book_bucket.'/'.$book_bucket_prefix.$prepend.'_'.basename($filename).'" 
+                "s3://'.$upload_save_bucket.'/'.$upload_save_prefix.$uploadname.'"');
   }
   exit;
 }
 
 if ($option == 2) { // Import XML
-  // 1. Check if the file exists
+  // Check if the import file exists
   if (! file_exists($library_xml_import)) {
     echo 'Import XML File not found at '.$library_xml_import."\n";
     exit;
   }
 
-  // 2. Get List of files and their md5 hashes
-  $files = get_list_of_book_files_with_md5();
+  // Get List of files book files
+  $files = get_list_of_book_files();
   if (empty($files)) {
     echo 'No books were found in '.$book_bucket.'/'.$book_bucket_prefix.'  -  Import canceled.'."\n";
     exit; 
   }
 
-  // 3. Read Import file
+  // Read Import file
   $not_here = $here = $to_update = $update_errors = array();
   $import = simplexml_load_file($library_xml_import);
   foreach ($import->children() as $book) {
-    $md5 = (string)$book['md5'];
-    if (! array_key_exists($md5, $files)) {
+    $import_filename = (string)$book['filename'];
+    $index = array_search($import_filename, $files);
+    if ($index !== false) {
+      array_push($here, $book);
+    } else {
       array_push($not_here, $book);
-      continue;
     }
-    array_push($here, $book);
   }
 
   // Ask user if he wants to continue despite missing book files
   if (! empty($not_here)) {
-    echo 'The following book files could not be found: '."\n";
+    echo 'The following book files could not be found in S3: '."\n";
     foreach($not_here as $book) {
       echo trim($book['author'].' '.$book['title'])."\n";
-      echo '  '.$book['filename'].' '.$book['md5']."\n";
+      echo '  '.$book['filename']."\n";
     }
     $i = readline('Do you want to continue?   1 = Yes,  9 = No'."\n");
     if ($i != 1) { exit; }; 
   }
 
-  // Find out which files need to be updated
-  //// Load library, compare information
+  // Find out which files need to be updated: Load library, compare information
   $library = get_library_xml();
   if (empty($library)) {
     echo 'No library file was found. A new one was created at /tmp/'.$library_xml_name."\n";
@@ -511,17 +503,19 @@ if ($option == 2) { // Import XML
     $i = readline('Do you want to continue?   1 = Yes,  9 = No'."\n");
     if ($i != 1) { exit; }; 
   }
+
+  echo 'Comparing Info ...'."\n";
   foreach ($here as $book) {
-    $known_book = $library->xpath('book[@md5="'.(string)$book['md5'].'"]');
+    $known_book = $library->xpath('book[@filename="'.(string)$book['filename'].'"]');
     if (empty($known_book)) {
-      array_push($to_update, $book);
+      array_push($to_update, $book); // It is a new file!
     } else {
       // Compare data
       if ((string)$known_book[0]['title']       !== (string)$book['title']       or 
           (string)$known_book[0]['author']      !== (string)$book['author']      or 
           (string)$known_book[0]['author_sort'] !== (string)$book['author_sort'] or
           (string)$known_book[0]['genre']       !== (string)$book['genre']) {
-        if (! ends_with($book['filename'], 'pdf' )) {
+        if (! ends_with(strtolower((string)$book['filename']), 'pdf' )) {
           array_push($to_update, $book);
         }
       }
@@ -529,16 +523,14 @@ if ($option == 2) { // Import XML
   }
 
   if (empty($to_update)) {
-    echo 'No need to update anything. Exiting ...'."\n";
+    echo 'No need to update anything. Finished.'."\n";
     exit;
   }
 
   // Ask the user if he wants to continue
   echo 'The following files will be updated:'."\n";
   foreach($to_update as $book) {
-    //Find the current filename via md5 hash
-    $md5 = (string)$book['md5'];
-    $filename = $files[$md5];
+    $filename = (string)$book['filename'];
     echo '  '.basename($filename)."\n";
   }
 
@@ -549,23 +541,20 @@ if ($option == 2) { // Import XML
   $count = count($to_update);
   $i = 0;
   foreach($to_update as $book) {
-    //Find the current filename via md5 hash
-    $md5 = (string)$book['md5'][0];
-    $filename = $files[$md5];
     $i = $i + 1;
-    echo 'Processing book: '.$i.'/'.$count.': '.basename($filename)."\r";
-    $error = update_file_with_info($filename, $book);
-    if ($error != '') {
-      array_push($update_errors, basename($filename), $error);
-      print_r($error);
-    } else {
-      shell_exec('aws s3 cp --sse AES256 "/tmp/'.basename($filename).'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.basename($filename).'"');
+    $filename = basename((string)$book['filename']);
+    echo 'Processing book: '.$i.'/'.$count.': '.$filename."\r";
+    $error = set_book_info_via_lambda($filename, $book);
+
+    if (! empty($error)) {
+      $update_errors[$filename] = $error;
     }
   }
   echo "\n";
 
   // Did errors occur?
   if (! empty($update_errors)) {
+    print_r($update_errors);
     echo 'Update errors occured for the following books:'."\n";
     foreach ($update_errors as $filename => $error) {
       echo $filename."\n";
@@ -579,14 +568,14 @@ if ($option == 2) { // Import XML
 
 
 if ($option == 1) { // Export XML
-  // 1. Get list of files in the folder and their md5 hash
-  $files = get_list_of_book_files_with_md5();
+  // Get list of files in the folder
+  $files = get_list_of_book_files();
   if (empty($files)) {
     echo 'No books were found in '.$book_bucket.'/'.$book_bucket_prefix.'  -  Export canceled.'."\n";
     exit; 
   }
 
-  // 3. Look for which books we already have information in the library
+  // Look for which books we already have information in the library
   $library = get_library_xml();
   if (empty($library)) {
     echo 'No library file was found. A new one was created at /tmp/'.$library_xml_name."\n";
@@ -599,12 +588,13 @@ if ($option == 1) { // Export XML
   $known = $new = $no_info = array();
   $i = 0;
   $count = count($files);
-  foreach ($files as $md5 => $filename) {
+  foreach ($files as $filename_in) {
     $i = $i + 1;
-    echo 'Processing book: '.$i.'/'.$count.': '.basename($filename)."\r";
+    $filename = basename($filename_in);
+    echo 'Processing book: '.$i.'/'.$count.': '.$filename."\r";
     $book = $new_library->addChild('book');
-    $book->addAttribute('md5', $md5);
-    $known_book = $library->xpath('book[@md5="'.$md5.'"]');
+    $known_book = $library->xpath('book[@filename="'.$filename.'"]');
+    $book->addAttribute('filename', $filename);
     if (! empty($known_book)) {
       // Output the known information
       array_push($known, $filename);
@@ -612,20 +602,9 @@ if ($option == 1) { // Export XML
       $book->addAttribute('author', $known_book[0]['author']);
       $book->addAttribute('author_sort', $known_book[0]['author_sort']);   
       $book->addAttribute('genre', $known_book[0]['genre']);
-      $book->addAttribute('filename', basename($filename));
-      if ($known_book[0]['date_added'] != '' ) {
-        $book->addAttribute('date_added', $known_book[0]['date_added']);
-      } else {
-        $book->addAttribute('date_added', @date("Y-d-m"));
-      }
-      if ($known_book[0]['time_added'] != '' ) {
-        $book->addAttribute('time_added', $known_book[0]['time_added']);
-      } else {
-        $book->addAttribute('time_added', @date("H:i"));
-      }
     } else {
       // Read information from file
-      $info = get_book_info_from_file($filename);
+      $info = get_book_info_via_lambda($filename);
       if (empty($info)) {
         array_push($no_info, $filename);
         continue;
@@ -636,14 +615,11 @@ if ($option == 1) { // Export XML
       $book->addAttribute('author', $info['Author(s)']);
       $book->addAttribute('author_sort', $info['SortAuthor']);   
       $book->addAttribute('genre', $info['Tags']);
-      $book->addAttribute('filename', basename($filename));
-      $book->addAttribute('date_added', @date("Y-d-m"));
-      $book->addAttribute('time_added', @date("H:i"));
       array_push($new, $filename);
     }
   }
 
-  // 4. Output protocol, request confirmation to continue
+  // Output protocol, request confirmation to continue
   if (! empty($no_info)) {
     echo 'For the following books, no information could be read:'."\n";
     foreach($no_info as $filename) {
@@ -656,13 +632,12 @@ if ($option == 1) { // Export XML
       echo ' '.$filename."\n";
     }
   }
-
   if (! empty($no_info) || ! empty($new)) {
     $i = readline('Do you want to continue?   1 = Yes,  9 = No'."\n");
     if ($i != 1) { exit; }; 
   }
 
-  // 5 Create export and overwrite old library file
+  // Create export and overwrite old library file
   $new_library->asXml($library_xml_export);
   save_library_xml_to_xml($new_library);
   save_library_xml_to_json($new_library);
