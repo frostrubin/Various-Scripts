@@ -11,7 +11,7 @@ $library_xml_export  = '/Users/username/Desktop/export.xml';
 $library_xml_import  = '/Users/username/Desktop/Books.xml';
 $book_db             = '/Users/username/Desktop/Books.db';
 $ebook_meta_lambda   = 'EbookMetaLambdaFunction';
-$ebook_meta_binary   = '/Users/username/Applications/Calibre.app/Contents/MacOS/ebook-meta';
+$ebook_meta_binary   = '/Users/username/Applications/calibre.app/Contents/MacOS/ebook-meta';
 $ebook_meta_json_in  = '/tmp/ebook_meta_input.json';
 $ebook_meta_json_out = '/tmp/ebook_meta_output.json';
 
@@ -54,9 +54,9 @@ function ends_with($haystack, $needle) {
 function book_type_relevant($filename) { // Check if a filename ends with an "allowed" book type
   global $book_types;
   foreach ($book_types as $book_type) {
-  	if (ends_with($filename, $book_type)) {
-  	  return true;
-  	}
+    if (ends_with($filename, $book_type)) {
+      return true;
+    }
   }
 }
 
@@ -330,7 +330,7 @@ function save_library_xml_to_xml($library_xml) {
   global $book_bucket;
   global $book_bucket_prefix;
   $library_xml->asXml('/tmp/'.$library_xml_name);
-  shell_exec('aws s3 cp --sse "/tmp/'.$library_xml_name.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$library_xml_name.'"');
+  shell_exec('aws s3 cp --sse AES256 "/tmp/'.$library_xml_name.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$library_xml_name.'"');
 }
 
 function save_library_xml_to_json($library_xml) {
@@ -362,7 +362,7 @@ function save_library_xml_to_json($library_xml) {
   file_put_contents('/tmp/'.$library_json_name, $string);
   $output = array();
   $retcode = 0;
-  $cmd = 'aws s3 cp --sse "/tmp/'.$library_json_name.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$library_json_name.'" 2>&1';
+  $cmd = 'aws s3 cp --sse AES256 "/tmp/'.$library_json_name.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$library_json_name.'" 2>&1';
   exec($cmd, $output, $retcode);
   if ($rectode == 0 ){
     unset($output);
@@ -444,7 +444,7 @@ if ($option == 4) { // Update Filenames
   foreach ($to_rename as $old_name => $new_name) {
     echo 'Old '.basename($old_name)."\n";
     echo 'New '.basename($new_name)."\n";
-    $cmd = 'aws s3 mv --sse "s3://'.$book_bucket.'/'.$book_bucket_prefix.$old_name.'"';
+    $cmd = 'aws s3 mv --sse AES256 "s3://'.$book_bucket.'/'.$book_bucket_prefix.$old_name.'"';
     $cmd = $cmd.' "s3://'.$book_bucket.'/'.$book_bucket_prefix.$new_name.'"';
     shell_exec($cmd);
   }
@@ -460,7 +460,7 @@ if ($option == 3) { // Import new files.
   $prepend = @date("Y-d-m_H-i");
   foreach($files as $filename) {
     echo basename($filename)."\n";
-    shell_exec('aws s3 mv --sse "'.$filename.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$prepend.'_'.basename($filename).'"');
+    shell_exec('aws s3 mv --sse AES256 "'.$filename.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$prepend.'_'.basename($filename).'"');
   }
   exit;
 }
@@ -559,7 +559,7 @@ if ($option == 2) { // Import XML
       array_push($update_errors, basename($filename), $error);
       print_r($error);
     } else {
-      shell_exec('aws s3 cp --sse "/tmp/'.basename($filename).'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.basename($filename).'"');
+      shell_exec('aws s3 cp --sse AES256 "/tmp/'.basename($filename).'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.basename($filename).'"');
     }
   }
   echo "\n";
@@ -604,9 +604,9 @@ if ($option == 1) { // Export XML
     echo 'Processing book: '.$i.'/'.$count.': '.basename($filename)."\r";
     $book = $new_library->addChild('book');
     $book->addAttribute('md5', $md5);
-  	$known_book = $library->xpath('book[@md5="'.$md5.'"]');
-  	if (! empty($known_book)) {
-  	  // Output the known information
+    $known_book = $library->xpath('book[@md5="'.$md5.'"]');
+    if (! empty($known_book)) {
+      // Output the known information
       array_push($known, $filename);
       $book->addAttribute('title', $known_book[0]['title']);
       $book->addAttribute('author', $known_book[0]['author']);
@@ -623,12 +623,12 @@ if ($option == 1) { // Export XML
       } else {
         $book->addAttribute('time_added', @date("H:i"));
       }
-  	} else {
+    } else {
       // Read information from file
       $info = get_book_info_from_file($filename);
       if (empty($info)) {
-      	array_push($no_info, $filename);
-      	continue;
+        array_push($no_info, $filename);
+        continue;
       }
       // Originally, this were AddChildren statements
       // But my SQLite Import required the data as attributes
@@ -640,7 +640,7 @@ if ($option == 1) { // Export XML
       $book->addAttribute('date_added', @date("Y-d-m"));
       $book->addAttribute('time_added', @date("H:i"));
       array_push($new, $filename);
-  	}
+    }
   }
 
   // 4. Output protocol, request confirmation to continue
