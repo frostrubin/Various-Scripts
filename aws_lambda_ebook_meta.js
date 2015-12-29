@@ -12,6 +12,7 @@ exports.handler = function(event, context) {
         }
     }
     
+    var bucket      = event_property_to_var(event,'bucket');
     var file_in     = event_property_to_var(event,'file_in');
     var file_out    = event_property_to_var(event,'file_out');
     var title       = event_property_to_var(event,'title');
@@ -20,16 +21,17 @@ exports.handler = function(event, context) {
     var genre       = event_property_to_var(event,'genre');
     var update      = true;
 
-    if (title === '' || author === '' || author_sort === '' || genre === '') {
+    if (title === '' || author === '' || author_sort === '' || genre === '' || file_out === '') {
       update = false;
     }
+    
 
-    var s3 = new aws.S3({params: {Bucket: 'bookbucketname'}});
+    var s3 = new aws.S3();
         async.waterfall(
             [
                 function(callback) {
-                    if (file_in === '' || file_out === '') {
-                      callback('Error','file_in or file_out not provided',null);
+                    if (file_in === '' || bucket === '') {
+                      callback('Error','file_in or bucket not provided',null);
                     }
                     callback(null, '');
                 },
@@ -43,13 +45,18 @@ exports.handler = function(event, context) {
                 },
                 function(guid, callback) {
                     var filename = '/tmp/' + guid + '.' + file_in.split('.').pop();
-                    var file   = fs.createWriteStream(filename);
-                    var stream = s3.getObject({Key: 'books/' + file_in}).createReadStream();
-                      stream.pipe(file).on('end', function() {
-                        //Nothing
-                      }).on('error', function() {callback('Error', 'Could not read file from S3 to /tmp', filename); });
-                      console.log('Opened' + file_in + ' to ' + filename);
-                      callback(null, filename); //Das ruft jetzt das CMD auf
+                    var file   = fs.createWriteStream(filename);         
+                    file.on('finish', function() {
+                      callback(null, filename); //Das ruft das CMD auf
+                    });
+                    s3.getObject({Bucket: bucket, Key: file_in}).
+                      on('httpData', function(chunk) { file.write(chunk); }).
+                      on('httpDone', function() { 
+                        file.end(); //Das triggert das finish
+                        console.log('Opened ' + file_in + ' to ' + filename);
+                      }).
+                      on('error', function(error) {callback('Error', 'Could not read file from S3 to ', filename); }).
+                        send();
                 },
                 function(tmp_filename, callback) {
                     var command = 'export LANG=en_US.UTF-8;./calibre/ebook-meta ' + tmp_filename;
@@ -61,7 +68,7 @@ exports.handler = function(event, context) {
                       command += ' --tags="' + genre + '"';
                       command += ' -c "" -r "" -p "" -k "" -d "" -l "" --isbn "" -s "" --category ""';
                     }
-                    console.log('Command' + command);
+                    console.log('Command: ' + command);
                     callback(null, tmp_filename, command);
                 },
                 function(tmp_filename, command, callback) {
@@ -98,9 +105,9 @@ exports.handler = function(event, context) {
                   } else {
                     // Data was written to the file
                     var stream  = fs.createReadStream(tmp_filename);
-                    s3.putObject({Key: 'books/' + file_out, Body: stream}, function (err) {
+                    s3.putObject({Bucket: bucket, Key: file_out, Body: stream}, function (err) {
                       if (err) {
-                        callback(err, 'Could not put file back to s3', null);
+                        callback(err, 'Could not put the changed file to s3', null);
                       }
                       callback(null, file_out + ' successfully written', null);
                     });                  
@@ -110,8 +117,8 @@ exports.handler = function(event, context) {
             function (err, msg, data) {
               console.log('Callback Function Reached');
               console.log('Err: ' + err);
-              console.log('Msg ' + msg);
-              console.log('Data ' + data);
+              console.log('Msg: ' + msg);
+              console.log('Data: ' + data);
               var result = {};
               result.update = update;
               result.msg  = msg;
@@ -123,11 +130,17 @@ exports.handler = function(event, context) {
                   out = msg + JSON.stringify(data);
                 } catch(err) {
                   out = msg;
-                }
-                context.fail(out);
+                }  
+                // Empty the /tmp directory. We do not care about the result
+                exec('rm -rf /tmp/* &', function(error) {
+                  context.fail(out);
+                });
               } else {
                 result.status = 0;
-                context.succeed(result);
+                // Empty the /tmp directory. We do not care about the result
+                exec('rm -rf /tmp/* &', function(error) {
+                  context.succeed(result);
+                });
               }
             }
         );
