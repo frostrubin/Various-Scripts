@@ -47,7 +47,7 @@ function present_basic_options() { // Main selection dialog for the user to choo
   endswitch;
 }
 
-function ends_with($haystack, $needle) {
+function ends_with($haystack, $needle) { 
   return $needle === "" || substr($haystack, -strlen($needle)) === $needle;
 }
 
@@ -73,6 +73,23 @@ function get_list_of_book_files() { // Get list of book files from the library f
     }
   }
   return $files;
+}
+
+function get_list_of_book_files_with_mtime() { // Get list of book files from the library folder with corresponding last modified date
+  global $book_bucket;
+  global $book_bucket_prefix;
+  echo 'Getting list of book files with mtime ...'."\n";
+  $files = array();
+  $cmd = 'aws s3api list-objects --bucket '.$book_bucket.' --prefix "'.$book_bucket_prefix.'"';
+  $cmd = $cmd.' --query \'Contents[].{Key: Key, Mtime: LastModified}\'';
+  $json = shell_exec($cmd);
+  $json_array = json_decode($json, TRUE);
+  foreach($json_array as $info_array) {
+    if (book_type_relevant($info_array['Key'])) {
+      $files[$info_array['Key']] = $info_array['Mtime'];
+    }
+  }
+  return $files; 
 }
 
 function get_list_of_new_book_files() { // Get list of new files from the specific folder
@@ -150,6 +167,7 @@ function execute_ebook_meta_lambda() { //Execute the lambda function. Returns on
   $cmd = 'aws lambda invoke --function-name '.$ebook_meta_lambda.' --invocation-type RequestResponse';
   $cmd = $cmd.' --payload fileb://'.$ebook_meta_json_in.' '.$ebook_meta_json_out.' 2>&1'; //STDERR to STDOUT
   return shell_exec($cmd);
+  //return shell_exec('/Users/bernhard/Desktop/metafake/metafake.sh "'.$ebook_meta_json_out.'"');
 }
 
 function check_lambda_status_retcode() { // Return the status code of a lambda execution result
@@ -171,6 +189,11 @@ function check_lambda_status_retcode() { // Return the status code of a lambda e
 function check_for_lambda_tech_error($terminal_result) {
   global $ebook_meta_json_out;
   $error = '';
+  $output = '';
+  if (file_exists($ebook_meta_json_out)) {
+    $output = file_get_contents($ebook_meta_json_out);
+  }
+  $output_array = json_decode($output, TRUE);
   $json_array = json_decode($terminal_result, TRUE);
   if (empty($json_array)) {
     $error = $terminal_result; // Output was not valid JSON
@@ -178,23 +201,17 @@ function check_for_lambda_tech_error($terminal_result) {
     if ($json_array['StatusCode'] !== 200) { // Only Status Code 200 is good
       $error = $terminal_result;
     }
-    if (array_key_exists('FunctionError', $json_array)) { // Function Error occured
-      $error = $terminal_result;
-    }
+    $error = $output_array['errorMessage'];
   }
   
-  $output = '';
-  if (file_exists($ebook_meta_json_out)) {
-    $output = file_get_contents($ebook_meta_json_out);
-  } else {
-    $error = $error."\n".'No lamabda output file was created at '.$ebook_meta_json_out."\n";
+  if (! file_exists($ebook_meta_json_out)) {
+    $error = $error."\n".'No lamabda output file was created at '.$ebook_meta_json_out;
   }
 
-  $output_array = json_decode($output, TRUE);
   if (empty($output_array)) {
-    $error = $error."\n".'The output file did not contain valid JSON: '.$ebook_meta_json_out."\n";
+    $error = $error."\n".'The output file did not contain valid JSON: '.$ebook_meta_json_out;
   } elseif (! array_key_exists('status', $output_array)) {
-    $error = $error."\n".'The output file did not have a JSON field named status: '.$ebook_meta_json_out."\n";
+    $error = $error."\n".'The output file did not have a JSON field named status: '.$ebook_meta_json_out;
   }
 
   if (! empty($error)) {
@@ -228,7 +245,7 @@ function get_book_info_via_lambda($filename_in) {
 
   shell_exec('echo "{" > "'.$ebook_meta_json_in.'"');
   shell_exec('echo \"bucket\": \"'.$book_bucket.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"file_in\": \"'.$book_bucket_prefix.$filename.'\" >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"file_in\": \""'.$book_bucket_prefix.$filename.'\"" >> "'.$ebook_meta_json_in.'"');
   shell_exec('echo "}" >> "'.$ebook_meta_json_in.'"');
   $terminal_result = execute_ebook_meta_lambda();
   $tech_error = check_for_lambda_tech_error($terminal_result);
@@ -279,12 +296,12 @@ function set_book_info_via_lambda($filename_to_update, $book) {
   echo 'Setting book info for '.$filename."\n";
   shell_exec('echo "{" > "'.$ebook_meta_json_in.'"');
   shell_exec('echo \"bucket\": \"'.$book_bucket.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"file_in\": \"'.$filename_in.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"file_out\": \"'.$filename_out.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"title\": \"'.$title.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"author\": \"'.$author.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"author_sort\": \"'.$author_sort.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"genre\": \"'.$genre.'\" >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"file_in\": \""'.$filename_in.'\"", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"file_out\": \""'.$filename_out.'\"", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"title\": \""'.$title.'\"", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"author\": \""'.$author.'\"", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"author_sort\": \""'.$author_sort.'\"", >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"genre\": \""'.$genre.'\"" >> "'.$ebook_meta_json_in.'"');
   shell_exec('echo "}" >> "'.$ebook_meta_json_in.'"');
   $terminal_result = execute_ebook_meta_lambda();
   $tech_error = check_for_lambda_tech_error($terminal_result);
@@ -423,8 +440,9 @@ if ($option == 4) { // Update Filenames
   foreach ($to_rename as $old_name => $new_name) {
     echo 'Old '.basename($old_name)."\n";
     echo 'New '.basename($new_name)."\n";
-    if ($files[$new_name] !== '' ) {
-      echo 'Waring! the new file above already exists!!'."\n";
+    $index = array_search($new_name, $files);
+    if ($index !== false) {
+      echo 'Warning! The new file above already exists!!'."\n";
     }
   }
   $i = readline('Do you want to continue?   1 = Yes,  9 = No'."\n");
@@ -449,10 +467,12 @@ if ($option == 3) { // Import new files.
   $prepend = @date("Y-d-m_H-i");
   foreach($files as $filename) {
     echo basename($filename)."\n";
-    $uploadname = $prepend.'_'.pathinfo($filename, PATHINFO_FILENAME).'.'.strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $uploadname = $prepend.'_'.slug(pathinfo($filename, PATHINFO_FILENAME)).'.'.strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $uploadname = trim($uploadname);
     shell_exec('aws s3 mv --sse AES256 "'.$filename.'" "s3://'.$book_bucket.'/'.$book_bucket_prefix.$uploadname.'"');
-    shell_exec('aws s3 cp --sse AES256 "s3://'.$book_bucket.'/'.$book_bucket_prefix.$prepend.'_'.basename($filename).'" 
-                "s3://'.$upload_save_bucket.'/'.$upload_save_prefix.$uploadname.'"');
+    $cmd = 'aws s3 cp --sse AES256 "s3://'.$book_bucket.'/'.$book_bucket_prefix.$uploadname.'"';
+    $cmd = $cmd.' "s3://'.$upload_save_bucket.'/'.$upload_save_prefix.$uploadname.'"';
+    shell_exec($cmd);
   }
   exit;
 }
@@ -554,7 +574,6 @@ if ($option == 2) { // Import XML
 
   // Did errors occur?
   if (! empty($update_errors)) {
-    print_r($update_errors);
     echo 'Update errors occured for the following books:'."\n";
     foreach ($update_errors as $filename => $error) {
       echo $filename."\n";
@@ -569,7 +588,7 @@ if ($option == 2) { // Import XML
 
 if ($option == 1) { // Export XML
   // Get list of files in the folder
-  $files = get_list_of_book_files();
+  $files = get_list_of_book_files_with_mtime();
   if (empty($files)) {
     echo 'No books were found in '.$book_bucket.'/'.$book_bucket_prefix.'  -  Export canceled.'."\n";
     exit; 
@@ -588,35 +607,52 @@ if ($option == 1) { // Export XML
   $known = $new = $no_info = array();
   $i = 0;
   $count = count($files);
-  foreach ($files as $filename_in) {
+  foreach ($files as $filename_in => $mtime) {
+    $call_lambda = FALSE;
+    $info = '';
     $i = $i + 1;
     $filename = basename($filename_in);
     echo 'Processing book: '.$i.'/'.$count.': '.$filename."\r";
     $book = $new_library->addChild('book');
     $known_book = $library->xpath('book[@filename="'.$filename.'"]');
     $book->addAttribute('filename', $filename);
+    $book->addAttribute('mtime', $mtime);
     if (! empty($known_book)) {
-      // Output the known information
-      array_push($known, $filename);
-      $book->addAttribute('title', $known_book[0]['title']);
-      $book->addAttribute('author', $known_book[0]['author']);
-      $book->addAttribute('author_sort', $known_book[0]['author_sort']);   
-      $book->addAttribute('genre', $known_book[0]['genre']);
+      $mtime_old = $known_book[0]['mtime'];
+      if ($mtime != $mtime_old) {
+        $call_lambda = TRUE;
+      }
     } else {
+      $call_lambda = TRUE;
+    }
+
+    if ($call_lambda === TRUE) {
       // Read information from file
       $info = get_book_info_via_lambda($filename);
       if (empty($info)) {
         array_push($no_info, $filename);
         continue;
-      }
-      // Originally, this were AddChildren statements
-      // But my SQLite Import required the data as attributes
-      $book->addAttribute('title', $info['Title']);
-      $book->addAttribute('author', $info['Author(s)']);
-      $book->addAttribute('author_sort', $info['SortAuthor']);   
-      $book->addAttribute('genre', $info['Tags']);
-      array_push($new, $filename);
+      }   
     }
+
+    // Still here? Then we have info either in KNOWN_BOOK or in INFO
+    if (! empty($info)) {
+      array_push($new, $filename);
+      $known_book[0]['title']       = $info['Title'];
+      $known_book[0]['author']      = $info['Author(s)'];
+      $known_book[0]['author_sort'] = $info['SortAuthor'];
+      $known_book[0]['genre']       = $info['Tags'];
+    } else {
+      array_push($known, $filename);
+    }
+
+    // Output the known information
+    // Originally, this were AddChildren statements
+    // But my SQLite Import required the data as attributes
+    $book->addAttribute('title',       $known_book[0]['title']);
+    $book->addAttribute('author',      $known_book[0]['author']);
+    $book->addAttribute('author_sort', $known_book[0]['author_sort']);   
+    $book->addAttribute('genre',       $known_book[0]['genre']);
   }
 
   // Output protocol, request confirmation to continue
