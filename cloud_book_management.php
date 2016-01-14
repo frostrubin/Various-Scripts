@@ -69,7 +69,7 @@ function get_list_of_book_files() { // Get list of book files from the library f
   $json_array = json_decode($json, TRUE);
   foreach($json_array as $info_array) {
     if (book_type_relevant($info_array['Key'])) {
-      array_push($files, basename($info_array['Key']));
+      array_push($files, $info_array['Key']);
     }
   }
   return $files;
@@ -99,7 +99,7 @@ function get_list_of_new_book_files() { // Get list of new files from the specif
       while (false !== ($file = readdir($handle))) {
           $i = $i + 1;
           if ($file !== "." && $file !== ".." && book_type_relevant($file)) {
-            $fullFilePath=$new_book_folder.$file;
+            $fullFilePath = $new_book_folder.basename($file);
             array_push($files, $fullFilePath);
           }
       }
@@ -142,16 +142,6 @@ function str_last_replace($search, $replace, $subject) {
   }
   return $subject;
 }
-
-function append_simplexml(&$simplexml_to, &$simplexml_from) {
-  foreach ($simplexml_from->children() as $simplexml_child) {
-    $simplexml_temp = $simplexml_to->addChild($simplexml_child->getName(), (string) $simplexml_child);
-    foreach ($simplexml_child->attributes() as $attr_key => $attr_value) {
-      $simplexml_temp->addAttribute($attr_key, $attr_value);
-    }
-    append_simplexml($simplexml_temp, $simplexml_child);
-  }
-} 
 
 function read_ebook_meta_lambda_result_data() { // Return the lines from the "data" segment that contain calibre output
   global $ebook_meta_json_out;
@@ -230,10 +220,9 @@ function get_book_info_via_lambda($filename_in) {
   global $book_bucket;
   global $book_bucket_prefix;
   echo 'Getting book info for '.$filename_in."\n";
-  $filename = basename($filename_in);
   $info = array();
-  if (ends_with(strtolower($filename), 'pdf')) {
-    $parts = explode(' - ', $filename);
+  if (ends_with(strtolower($filename_in), 'pdf')) {
+    $parts = explode(' - ', basename($filename_in));
     $author = trim($parts[0]);
     $info['Author(s)'] = $author;
     array_shift($parts);
@@ -245,7 +234,7 @@ function get_book_info_via_lambda($filename_in) {
 
   shell_exec('echo "{" > "'.$ebook_meta_json_in.'"');
   shell_exec('echo \"bucket\": \"'.$book_bucket.'\", >> "'.$ebook_meta_json_in.'"');
-  shell_exec('echo \"file_in\": \""'.$book_bucket_prefix.$filename.'\"" >> "'.$ebook_meta_json_in.'"');
+  shell_exec('echo \"file_in\": \""'.$filename_in.'\"" >> "'.$ebook_meta_json_in.'"');
   shell_exec('echo "}" >> "'.$ebook_meta_json_in.'"');
   $terminal_result = execute_ebook_meta_lambda();
   $tech_error = check_for_lambda_tech_error($terminal_result);
@@ -281,19 +270,17 @@ function get_book_info_via_lambda($filename_in) {
   return $info;
 }
 
-function set_book_info_via_lambda($filename_to_update, $book) {
+function set_book_info_via_lambda($filename_in, $book) {
   global $book_bucket;
   global $book_bucket_prefix;
   global $ebook_meta_json_in;
   global $ebook_meta_json_out;
-  $filename     = basename($filename_to_update);
-  $filename_in  = $book_bucket_prefix.$filename;
   $filename_out = generate_new_file_name($book);
   $title        = (string)$book['title'];
   $author       = (string)$book['author'];
   $author_sort  = (string)$book['author_sort'];
   $genre        = (string)$book['genre'];
-  echo 'Setting book info for '.$filename."\n";
+  echo 'Setting book info for '.$filename_in."\n";
   shell_exec('echo "{" > "'.$ebook_meta_json_in.'"');
   shell_exec('echo \"bucket\": \"'.$book_bucket.'\", >> "'.$ebook_meta_json_in.'"');
   shell_exec('echo \"file_in\": \""'.$filename_in.'\"", >> "'.$ebook_meta_json_in.'"');
@@ -369,13 +356,14 @@ function save_library_xml_to_json($library_xml) {
               $filename = $b;    break;
       }
     }
-    $string = $string.'    "author" : "'.$author.'",'."\n";
-    $string = $string.'    "title" : "'.$title.'",'."\n";
-    $string = $string.'    "genre" : "'.$genre.'",'."\n";
-    $string = $string.'    "filename" : "'.$filename.'"'."\n";
+    $string = $string.'    "author": "'.$author.'",'."\n";
+    $string = $string.'    "title": "'.$title.'",'."\n";
+    $string = $string.'    "genre": "'.$genre.'",'."\n";
+    $string = $string.'    "filename": "'.$filename.'"'."\n";
     $string = $string.'  },'."\n";  
   }
   $string = $string.'  {'."\n".'  }'."\n".']';
+  $string = json_encode(json_decode($string)); //Nicer JSON via Standard functions
   file_put_contents('/tmp/'.$library_json_name, $string);
   $output = array();
   $retcode = 0;
@@ -418,7 +406,7 @@ if ($option == 2) { // Import XML
   // Get List of files book files
   $files = get_list_of_book_files();
   if (empty($files)) {
-    echo 'No books were found in '.$book_bucket.'/'.$book_bucket_prefix.'  -  Import canceled.'."\n";
+    echo 'No books were found  -  Import canceled.'."\n";
     exit; 
   }
 
@@ -466,7 +454,7 @@ if ($option == 2) { // Import XML
           (string)$known_book[0]['author']      !== (string)$book['author']      or 
           (string)$known_book[0]['author_sort'] !== (string)$book['author_sort'] or
           (string)$known_book[0]['genre']       !== (string)$book['genre']       or
-          basename((string)$known_book[0]['filename']) !== basename(generate_new_file_name($book))
+          (string)$known_book[0]['filename']    !== generate_new_file_name($book)
          ) {
         if (! ends_with(strtolower((string)$book['filename']), 'pdf' )) {
           array_push($to_update, $book);
@@ -483,16 +471,15 @@ if ($option == 2) { // Import XML
   // Collect known names and new names into one array 
   $total_names = array(); 
   foreach ($files as $filename) { 
-    array_push($total_names, basename($filename)); 
+    array_push($total_names, $filename); 
   } 
   foreach ($to_update as $book) { 
-    $new_name = basename(generate_new_file_name($book)); 
-    array_push($total_names, $new_name); 
+    array_push($total_names, generate_new_file_name($book)); 
   } 
   // Now look if we were giving out one name multiple times 
   $cnt = array_count_values($total_names); 
   foreach ($to_update as $book) { 
-    $new_name = basename(generate_new_file_name($book)); 
+    $new_name = generate_new_file_name($book); 
     if ($cnt[$new_name] > 1 ) {
       echo 'Duplicate filenames woule be produced:'."\n";
       echo $new_name."\n"; 
@@ -504,7 +491,7 @@ if ($option == 2) { // Import XML
   echo 'The following files will be updated:'."\n";
   foreach ($to_update as $book) {
     $filename = (string)$book['filename'];
-    echo '  '.basename($filename)."\n";
+    echo '  '.$filename."\n";
   }
 
   $i = readline('Do you want to continue?   1 = Yes,  9 = No'."\n");
@@ -515,7 +502,7 @@ if ($option == 2) { // Import XML
   $i = 0;
   foreach($to_update as $book) {
     $i = $i + 1;
-    $filename = basename((string)$book['filename']);
+    $filename = (string)$book['filename'];
     echo 'Processing book: '.$i.'/'.$count.': '.$filename."\r";
     $error = set_book_info_via_lambda($filename, $book);
 
@@ -543,7 +530,7 @@ if ($option == 1) { // Export XML
   // Get list of files in the folder
   $files = get_list_of_book_files_with_mtime();
   if (empty($files)) {
-    echo 'No books were found in '.$book_bucket.'/'.$book_bucket_prefix.'  -  Export canceled.'."\n";
+    echo 'No books were found  -  Export canceled.'."\n";
     exit; 
   }
 
@@ -560,11 +547,10 @@ if ($option == 1) { // Export XML
   $known = $new = $no_info = array();
   $i = 0;
   $count = count($files);
-  foreach ($files as $filename_in => $mtime) {
+  foreach ($files as $filename => $mtime) {
     $call_lambda = FALSE;
     $info = '';
     $i = $i + 1;
-    $filename = basename($filename_in);
     echo 'Processing book: '.$i.'/'.$count.': '.$filename."\r";
     $book = $new_library->addChild('book');
     $known_book = $library->xpath('book[@filename="'.$filename.'"]');
