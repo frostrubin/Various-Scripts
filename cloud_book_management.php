@@ -33,8 +33,8 @@ function open_book_db() {
 
 function present_basic_options() { // Main selection dialog for the user to choose an option
   echo 'Hello, you have 5 options. Please choose one.'."\n".'  1) Export XML'."\n".'  2) Import XML'."\n"; 
-  echo '  3) Import new files'."\n".'  4) Update filenames'."\n".'  5) Open book database'."\n"; 
-  echo 'The normal flow is: 3 -> 1 -> 2 -> 1 -> 4 -> 1'."\n";
+  echo '  3) Import new files'."\n".'  5) Open book database'."\n"; 
+  echo 'The normal flow is: 3 -> 1 -> 2 -> 1'."\n";
 
   $i = readline( );
   switch ($i):
@@ -288,7 +288,7 @@ function set_book_info_via_lambda($filename_to_update, $book) {
   global $ebook_meta_json_out;
   $filename     = basename($filename_to_update);
   $filename_in  = $book_bucket_prefix.$filename;
-  $filename_out = $filename_in;
+  $filename_out = generate_new_file_name($book);
   $title        = (string)$book['title'];
   $author       = (string)$book['author'];
   $author_sort  = (string)$book['author_sort'];
@@ -329,6 +329,17 @@ function slug($input) {
   $string = str_replace('  ', ' ', $string);
   $string = trim($string);
   return $string;
+}
+
+function generate_new_file_name($book) {
+  global $book_bucket_prefix;
+  $filename     = (string)$book['filename'];
+  $title        = (string)$book['title'];
+  $author       = (string)$book['author'];
+  $new_name = $author.' - '.$title;
+  $new_name = slug($new_name);
+  $new_name = $book_bucket_prefix.$new_name.'.'.strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+  return $new_name;
 }
 
 function save_library_xml_to_xml($library_xml) {
@@ -379,86 +390,6 @@ function save_library_xml_to_json($library_xml) {
 ///////// Begin of Program Logic /////////
 // Let the user choose what to do
 $option = present_basic_options();
-
-if ($option == 4) { // Update Filenames
-  // Get List of file names
-  $files = get_list_of_book_files();
-  // Remove PDF files
-  foreach ($files as $filename) {
-    if (ends_with(strtolower($filename), 'pdf')) {
-      $index = array_search($filename, $files);
-      if ($index !== false) {
-        unset($files[$index]);
-      }
-    } 
-  }
-
-  if (empty($files)) {
-    echo 'No books were found in '.$book_bucket.'/'.$book_bucket_prefix.'  -  Renaming canceled.'."\n";
-    exit; 
-  }
-
-  // Load Library.xml file
-  $library = get_library_xml();
-
-  // Loop over filenames, compare metadata
-  $unknown = $to_rename = array();
-  foreach ($files as $filename) {
-    $filename_base = basename($filename);
-    $book = array();
-    $book = $library->xpath('book[@filename="'.$filename_base.'"]');
-    if (empty($book)) {
-      array_push($unknown, $filename_base); 
-      continue;
-    }
-
-    // Begin creating a filename from the metadata
-    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-    $new_name = $book[0]['author'].' - '.$book[0]['title'];
-    $new_name = slug($new_name);
-    $new_name = $new_name.'.'.$ext;
-
-    // Compare it to the real filename
-    if ($new_name !== $filename_base) {
-      $to_rename[$filename] = $new_name;
-    }
-  }
-  
-  if (! empty($unknown)) {
-    $question = count($unknown).' books are unknown. Do you want to cancel?   1 = Cancel,  9 = Continue'; 
-    $i = readline($question."\n");
-    if ($i == 1) { print_r($unknown); exit; }; 
-  }
-
-  if (empty($to_rename)) {
-    echo 'No books need to be renamed. Finished.'."\n";
-    exit;
-  }
-
-  // Still here? The start renaming!
-  echo 'The following books will be renamed: '."\n";
-  foreach ($to_rename as $old_name => $new_name) {
-    echo 'Old '.basename($old_name)."\n";
-    echo 'New '.basename($new_name)."\n";
-    $index = array_search($new_name, $files);
-    if ($index !== false) {
-      echo 'Warning! The new file above already exists!!'."\n";
-    }
-  }
-  $i = readline('Do you want to continue?   1 = Yes,  9 = No'."\n");
-  if ($i != 1) { exit; }; 
-
-  foreach ($to_rename as $old_name => $new_name) {
-    echo 'Old '.basename($old_name)."\n";
-    echo 'New '.basename($new_name)."\n";
-    $cmd = 'aws s3 mv --sse AES256 "s3://'.$book_bucket.'/'.$book_bucket_prefix.$old_name.'"';
-    $cmd = $cmd.' "s3://'.$book_bucket.'/'.$book_bucket_prefix.$new_name.'"';
-    shell_exec($cmd);
-  }
-
-  echo 'Finished'."\n";
-  exit;
-}
 
 if ($option == 3) { // Import new files. 
   //Prepend date and time to filename
@@ -534,7 +465,9 @@ if ($option == 2) { // Import XML
       if ((string)$known_book[0]['title']       !== (string)$book['title']       or 
           (string)$known_book[0]['author']      !== (string)$book['author']      or 
           (string)$known_book[0]['author_sort'] !== (string)$book['author_sort'] or
-          (string)$known_book[0]['genre']       !== (string)$book['genre']) {
+          (string)$known_book[0]['genre']       !== (string)$book['genre']       or
+          basename((string)$known_book[0]['filename']) !== basename(generate_new_file_name($book))
+         ) {
         if (! ends_with(strtolower((string)$book['filename']), 'pdf' )) {
           array_push($to_update, $book);
         }
@@ -547,9 +480,29 @@ if ($option == 2) { // Import XML
     exit;
   }
 
+  // Collect known names and new names into one array 
+  $total_names = array(); 
+  foreach ($files as $filename) { 
+    array_push($total_names, basename($filename)); 
+  } 
+  foreach ($to_update as $book) { 
+    $new_name = basename(generate_new_file_name($book)); 
+    array_push($total_names, $new_name); 
+  } 
+  // Now look if we were giving out one name multiple times 
+  $cnt = array_count_values($total_names); 
+  foreach ($to_update as $book) { 
+    $new_name = basename(generate_new_file_name($book)); 
+    if ($cnt[$new_name] > 1 ) {
+      echo 'Duplicate filenames woule be produced:'."\n";
+      echo $new_name."\n"; 
+      exit;
+    } 
+  }
+
   // Ask the user if he wants to continue
   echo 'The following files will be updated:'."\n";
-  foreach($to_update as $book) {
+  foreach ($to_update as $book) {
     $filename = (string)$book['filename'];
     echo '  '.basename($filename)."\n";
   }
