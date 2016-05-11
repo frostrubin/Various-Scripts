@@ -2,8 +2,8 @@
 <?php
 
 // Edge cases: image? Formatting? https?
-$keychain_file = '/Users/bernhard/Desktop/test.keychain';
-$keychain_dump_file = '/Users/bernhard/Desktop/dump.txt';
+$keychain_file = '/Users/username/Library/Keychains/login.keychain'; 
+$keychain_dump_file = '/Users/username/Desktop/export/dump.txt';
 $known_class_types = array('class: "genp"', 'class: "inet"');
 
 function get_keychain_dump() {
@@ -47,6 +47,9 @@ function cleanup_classes($dirty_classes) {
         case '"srvr"':
           $clean_class['name'] = substr($ltrim, 6);
           break;
+        case '"acct"':
+          $clean_class['account'] = substr($ltrim, 6);
+          break;
 	    }
       
 	    $inner_count++;
@@ -82,6 +85,30 @@ function extract_data_from_cleaned_classes($cleaned_classes) {
     } else {
     	$extracted_class['name'] = 'Name could not be extracted';
     }
+
+//  Extract Account
+    $account = null;
+    switch (substr($cleaned_class['account'], 0, 7)) {
+      case '<blob>=':
+        $account = substr($cleaned_class['account'], 7);
+        switch (substr($account, 0, 1)) {
+          case '"':
+            // Get Account without the quotes
+            $account = substr($account, 1, strlen($account) - 2);
+            break;
+          default:
+            if (substr($account, 0, 2) == '0x') {
+              $account = hex2bin(trim(substr($account, 2)));
+            }
+        }
+        break;
+    }
+    if (!empty($account)) {
+      $extracted_class['account'] = $account;
+    } else {
+      $extracted_class['account'] = '';
+    }    
+
 
     // Extract Data
     $data = null;
@@ -124,6 +151,8 @@ function resolve_note_xml($extracted_classes) {
     // Remove line breaks, translit to ASCII. Then: Check if non-printable characters are found
     if (!ctype_print(iconv("utf-8","ascii//TRANSLIT",preg_replace('/\r|\n/', '', $note)))) {
       $resolved_class['warning'] = 'true'; //something could not be resolved: warn me about it
+    } else {
+      $resolved_class['warning'] = '';
     }
 
     //$rtf_object = $xml->xpath("/plist/dict/key[.='RTFD']/following-sibling::*[1]")[0];
@@ -132,6 +161,7 @@ function resolve_note_xml($extracted_classes) {
     //Todo: handle RTF Input data like images, etc.
 
     $resolved_class['data'] = $note;
+    $resolved_class['account'] = '';
     array_push($resolved_classes, $resolved_class);
 	}
 	return $resolved_classes;
@@ -153,5 +183,37 @@ $classes_extracted = extract_data_from_cleaned_classes($classes_cleaned);
 
 // Resolve XML info from secure note items
 $classes_resolved = resolve_note_xml($classes_extracted);
-print_r($classes_resolved);
+foreach ($classes_resolved as $class) {
+  if (substr($class['name'], 0, 10) == 'com.apple.') {
+    continue;
+  }
+
+  $filename = '';
+  if ($class['account'] !== '') {
+    $filename = $class['name'].'#'.$class['account'];
+  } else {
+    $filename = $class['name'];
+  }
+
+  if (substr($filename,0,4) == 'www.') {
+    $filename = substr($filename, 4);
+  }
+
+  // remove slash
+  $filename = str_replace(' / ', ' ', $filename);
+  $filename = str_replace('/', '', $filename);
+
+  $filename = '/Users/username/Desktop/store/'.$filename.'.txt';
+  
+  $content = $class['data'];
+  //$content = 'Super Secret';
+
+  file_put_contents($filename, $content);
+  
+  if ($class['warning'] != '') {
+    echo $class['name'].'#'.$class['account']."\n";
+    //echo $class['data']."\n";
+  }
+}
+  
 ?>
