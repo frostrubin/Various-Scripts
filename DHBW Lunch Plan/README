@@ -1,0 +1,10 @@
+Hello,
+
+This repository contains scripts that were written back in 2008. 
+They access the lunch menu of the DHBW Mannheim in Germany and
+convert it into a nicer-looking version that I used to display on my Desktop.
+
+At the time of this post (Autumn 2010) they still worked, however I do no 
+longer maintain them. If the DHBW site changes, the scripts will break.
+
+Try them out!
