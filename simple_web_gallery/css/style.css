@@ -1,0 +1,83 @@
+* {
+	border: 0px;
+	padding: 0px;
+	margin: 0px;
+}
+
+body {
+	font-family: 'Roboto', sans-serif;
+	color:white;
+}
+
+nav {
+	background-color: #2196F3;
+	width:100%;
+	/*position:fixed;*/
+	top:0;
+	left:0;
+	height:80px;
+	z-index:99999;
+	box-shadow: 0 1px 4px rgba(49, 49, 64, 0.8);
+	-webkit-box-shadow: 0 1px 4px rgba(49, 49, 64, 0.8);
+	-moz-box-shadow: 0 1px 4px rgba(49, 49, 64, 0.8);
+	font-size: 2em;
+}
+
+nav #logo {
+	height:80%;
+	position:relative;
+	top:10%;
+	left:1%;
+}
+
+.frame {
+	box-shadow: 1px 1px 4px rgba(49, 49, 64, 0.8);
+	-webkit-box-shadow: 1px 1px 4px rgba(49, 49, 64, 0.8);
+	-moz-box-shadow: 1px 1px 4px rgba(49, 49, 64, 0.8);
+	float:left;
+	display:block;
+	border-radius: 1px;
+	-webkit-border-radius: 1px;
+	-moz-border-radius: 1px;
+}
+
+#gallery {
+	width:1200px;
+	height:100%;
+	margin:auto;
+	top:65px;
+	position: relative;
+}
+
+.frame img {
+	width:100%;
+	height:100%;
+	position:relative;
+	top:0;
+	left:0;
+	border-radius: 1px;
+	-webkit-border-radius: 1px;
+	-moz-border-radius: 1px;
+}
+
+div.title {
+	z-index:1000;
+	position:relative;
+	width:100%;
+	bottom:48px;
+	left:0;
+	height:48px;
+	display: none;
+	background-color: #E91E63;
+	color: #FFFFFF;
+	overflow: hidden;
+	opacity: 0.8;
+}
+
+p.title {
+	padding: 16px 16px 16px 16px;
+	position:relative;
+	bottom:16px;
+	left:0;
+	line-height: 16px;
+}
