@@ -1,0 +1,20 @@
+#agenda {
+	font-size: 1.5em;
+}
+
+.mono {
+	font-family: 'Lucida Console', Monaco, monospace;
+	font-size: 1.7em;
+}
+
+#agenda > div > div > table {
+	width: 100%;
+}
+
+.small {
+	vertical-align: top;
+	text-align: right;
+	margin-top: -2.7em;
+    margin-right: -10px;
+    font-size: 0.7em;
+}
