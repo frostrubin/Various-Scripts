@@ -1,0 +1,97 @@
+Cloudtrail & Athena 
+===================
+
+## Setup Cloudtrail
+1. Go to the [Cloudtrail Console](https://eu-west-1.console.aws.amazon.com/cloudtrail/home?region=eu-west-1#/configuration) and create a new trail "FullLog"
+2. Note the pricing! Your first trail is free, additional trails however cost
+3. Specify a log storage bucket my_cloudtrail_log_bucket
+4. Specify optional filters for "Data Events" (based on buckets or object paths in buckets).
+
+## Setup Athena
+1. Create a new Bucket in the same region where Athena will run
+2. Create a new Database and inside it a new Table based on the cloudtrail files
+
+Follow a mixture of 
+https://thomasvachon.com/articles/using-aws-athena-to-query-cloudtrail-logs/
+and
+https://aws.amazon.com/blogs/big-data/aws-cloudtrail-and-amazon-athena-dive-deep-to-analyze-security-compliance-and-operational-activity/
+
+## Example Table Creation
+```
+CREATE EXTERNAL TABLE logs (
+         Records ARRAY< STRUCT< eventName: STRING,
+         requestParameters: STRUCT< instancesSet: STRUCT< items: ARRAY< STRUCT< instanceId: STRING >>>,
+         volumeSet: STRUCT< items: ARRAY< STRUCT< volumeId: STRING > > > >,
+         eventType: STRING,
+         eventSource: STRING,
+         sourceIPAddress: STRING,
+         userIdentity: STRUCT< arn: STRING,
+         principalId: STRING,
+         accountId: STRING,
+         invokedBy: STRING,
+         TYPE: STRING,
+         sessionContext: STRUCT< sessionIssuer: STRUCT< arn: STRING,
+         principalId: STRING,
+         accountId: STRING,
+         TYPE: STRING,
+         userName: STRING >,
+         attributes: STRUCT< creationDate: STRING,
+         mfaAuthenticated: STRING > > >,
+         eventVersion: STRING,
+         responseElements: STRUCT< credentials: STRUCT< accessKeyId: STRING,
+         expiration: STRING,
+         sessionToken: STRING >,
+         assumedRoleUser: STRUCT< arn: STRING,
+         assumedRoleId: STRING > >,
+         userAgent: STRING,
+         eventID: STRING,
+         awsRegion: STRING,
+         sharedEventID: STRING,
+         eventTime: STRING,
+         resources: ARRAY< STRUCT< accountId: STRING,
+         TYPE: STRING,
+         ARN: STRING > >,
+         requestID: STRING,
+         recipientAccountId: STRING >>
+)
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+WITH serdeproperties( 'ignore.malformed.json' = 'true' )
+LOCATION 's3://my_cloudtrail_log_bucket/AWSLogs/896282838585/CloudTrail/'
+```
+
+
+## Perform Analysis
+```
+SELECT record.eventName AS event,
+         record.userIdentity.arn AS user,
+         record.eventTime,
+         record.resources[1].ARN AS object
+FROM 
+    (SELECT record
+    FROM logs
+    CROSS JOIN UNNEST(records) AS t (record) ) AS records
+WHERE record.eventSource = 's3.amazonaws.com'
+        AND ( record.eventName IN ('CreateBucket','DeleteBucket')
+        OR record.eventName LIKE '%Object' )
+ORDER BY  record.eventTime DESC LIMIT 100;
+```
+
+## Create IAM Log Protection Group/Policy
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Deny",
+            "Action": [
+                "s3:Delete*",
+                "s3:Put*"
+            ],
+            "Resource": [
+                "arn:aws:s3:::my_cloudtrail_log_bucket",
+                "arn:aws:s3:::my_cloudtrail_log_bucket/*"
+            ]
+        }
+    ]
+}
+```
