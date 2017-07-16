@@ -1,0 +1,27 @@
+## These are the commands that should be taken directly after 
+## an installation of GnuRoot Debian has been set up
+
+$ passwd
+$ apt-get update
+$ apt-get upgrade
+$ apt-get install nano
+$ apt-get install openssh-server
+$ adduser bernhard
+$ nano /etc/ssh/sshd_config
+UsePrivilegeSeperation no
+
+$ service ssh restart
+
+# Port 22 is bound to 2022 on GnuRoot
+
+$ ssh bernhard@192.168.0.2 -p 2022
+
+# Use /help to get help
+
+
+#$ usermod -aG sudo berndroid   # sudo is not installed :-(
+############### DO NOT DO THIS! It broke my jessie installation
+#$ nano /etc/apt/sources.list  (replace jessie with testing, comment backports)
+#$ apt-get update
+#$ apt-get --download-only dist-upgrade
+#$ apt-get dist-upgrade
