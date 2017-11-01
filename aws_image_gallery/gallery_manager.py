@@ -10,6 +10,7 @@ aliases = [
         "prefix": "path/to/a/folder/",
         "thumbMode": "all", # One Thumbnail per Folder vs. Every Image has it's thumbnail
         "thumbHeight": 180, # Height in px
+        "autoRotate": True,
         "authorized_users": [ '1234', '5678' ]
     },
     {
@@ -79,6 +80,12 @@ def create_thumbnails(alias):
         thumb_height = alias['thumbHeight']
     except KeyError:
         pass    
+
+    auto_rotate = False
+    try:
+        auto_rotate = alias['autoRotate']
+    except KeyError:
+        pass     
     
     ## Get List of Existing Thumbnails
     prefix = '{}/{}/'.format(alias['bucket'],alias['prefix'])
@@ -117,7 +124,8 @@ def create_thumbnails(alias):
                                     'source_key': key,
                                     'target_bucket': thumbnail_bucket,
                                     'target_key': thumb,
-                                    'target_height': thumb_height
+                                    'target_height': thumb_height,
+                                    'auto_rotate': auto_rotate
                 }),
             )            
     elif thumb_mode == 'all':
@@ -143,7 +151,8 @@ def create_thumbnails(alias):
                                     'source_key': key,
                                     'target_bucket': thumbnail_bucket,
                                     'target_key': thumb,
-                                    'target_height': thumb_height
+                                    'target_height': thumb_height,
+                                    'auto_rotate': auto_rotate
                 }),
             )            
     else:
